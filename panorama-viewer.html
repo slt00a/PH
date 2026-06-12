@@ -1,0 +1,292 @@
+<!--
+  ============================================================
+  PARKHILL 360° VIEWER  —  multi-scene, hosted version
+  ============================================================
+
+  HOW TO USE:
+
+  1. Put this file (index.html) in a folder.
+  2. Put your panorama images and the Parkhill logo in the SAME folder.
+  3. Edit the SCENES list below to match your image filenames and the
+     label you want on each button. Set LOGO to your logo's filename.
+  4. Upload the whole folder to a host (e.g. drag it onto
+     https://app.netlify.com/drop ). Share the link.
+
+  No base64, no encoding. Just keep the files together in one folder.
+  Add a scene later by dropping a new image in the folder and adding
+  one line to the SCENES list.
+  ============================================================
+-->
+<script>
+  // ---- EDIT THIS LIST: one line per scene ----
+  // label = button text,  file = image filename in this folder
+  const SCENES = [
+    { label: "Airlines",     file: "AIRLINES_01.jpg" },
+    { label: "Bridge",       file: "BRIDGE_01.jpg" },
+    { label: "Car Rentals",  file: "CAR_RENTALS_01.jpg" },
+    { label: "Holding 1",    file: "HOLDING_01.jpg" },
+    { label: "Holding 2",    file: "HOLDING_02.jpg" },
+    { label: "Mezzanine 1",  file: "MEZZANINE_01.jpg" },
+    { label: "Mezzanine 2",  file: "MEZZANINE_02.jpg" },
+    { label: "Mezzanine 3",  file: "MEZZANINE_03.jpg" }
+  ];
+
+  // ---- Your Parkhill logo filename (in this same folder) ----
+  const LOGO = "1 - Parkhill - Red.png";
+</script>
+
+<div id="app">
+  <div id="viewer"></div>
+  <div id="watermark-layer"></div>
+
+  <div id="loader">
+    <div class="spinner"></div>
+    <p id="loader-text">Loading…</p>
+    <div id="progress-wrap"><div id="progress-bar"></div></div>
+  </div>
+
+  <div id="scene-bar">
+    <div id="scene-scroll"></div>
+  </div>
+
+  <div id="hint-bar">Drag to look around · Scroll to zoom</div>
+</div>
+
+<script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
+<script>
+(function () {
+  const viewer = document.getElementById('viewer');
+  const wmLayer = document.getElementById('watermark-layer');
+  const hintBar = document.getElementById('hint-bar');
+  const loader = document.getElementById('loader');
+  const loaderText = document.getElementById('loader-text');
+  const progressWrap = document.getElementById('progress-wrap');
+  const progressBar = document.getElementById('progress-bar');
+  const sceneScroll = document.getElementById('scene-scroll');
+
+  let scene, camera, renderer, mesh;
+  let lon = 0, lat = 0, targetLon = 0, targetLat = 0;
+  let fov = 75;
+  let isDragging = false;
+  let pointerX = 0, pointerY = 0, downLon = 0, downLat = 0;
+  let currentIndex = -1;
+
+  function init() {
+    scene = new THREE.Scene();
+    const w = viewer.clientWidth || window.innerWidth;
+    const h = viewer.clientHeight || window.innerHeight;
+    camera = new THREE.PerspectiveCamera(fov, w / h, 1, 1100);
+
+    const geo = new THREE.SphereGeometry(500, 60, 40);
+    geo.scale(-1, 1, 1);
+    const mat = new THREE.MeshBasicMaterial({ color: 0x111418 });
+    mesh = new THREE.Mesh(geo, mat);
+    scene.add(mesh);
+
+    renderer = new THREE.WebGLRenderer({ antialias: true });
+    renderer.setPixelRatio(window.devicePixelRatio);
+    renderer.setSize(w, h);
+    viewer.appendChild(renderer.domElement);
+
+    bindEvents();
+    onResize();
+    animate();
+    requestAnimationFrame(onResize);
+    window.addEventListener('load', onResize);
+    setTimeout(onResize, 200);
+
+    buildSceneButtons();
+    addLogo();
+
+    if (SCENES.length > 0) {
+      loadScene(0);
+    } else {
+      loader.style.display = 'none';
+      hintBar.style.display = 'none';
+    }
+  }
+
+  function buildSceneButtons() {
+    SCENES.forEach(function (s, i) {
+      const btn = document.createElement('button');
+      btn.className = 'scene-btn';
+      btn.textContent = s.label;
+      btn.addEventListener('click', function () {
+        if (i !== currentIndex) loadScene(i);
+      });
+      sceneScroll.appendChild(btn);
+    });
+  }
+
+  function setActiveButton(i) {
+    const btns = sceneScroll.querySelectorAll('.scene-btn');
+    btns.forEach(function (b, idx) {
+      b.classList.toggle('active', idx === i);
+    });
+  }
+
+  function addLogo() {
+    if (!LOGO) return;
+    const img = document.createElement('img');
+    img.className = 'wm-img';
+    img.src = LOGO;
+    img.onerror = function () { this.style.display = 'none'; };
+    wmLayer.appendChild(img);
+  }
+
+  function loadScene(i) {
+    const s = SCENES[i];
+    loader.style.display = 'flex';
+    loaderText.textContent = 'Loading ' + s.label + '…';
+    progressBar.style.width = '0%';
+    progressWrap.style.visibility = 'hidden';
+    loader.querySelector('.spinner').style.display = '';
+
+    const texLoader = new THREE.TextureLoader();
+    texLoader.load(
+      s.file,
+      function (texture) {
+        texture.minFilter = THREE.LinearFilter;
+        mesh.material.map = texture;
+        mesh.material.color.set(0xffffff);
+        mesh.material.needsUpdate = true;
+        loader.style.display = 'none';
+        hintBar.style.display = '';
+        currentIndex = i;
+        setActiveButton(i);
+      },
+      function (xhr) {
+        if (xhr.lengthComputable) {
+          progressWrap.style.visibility = 'visible';
+          const pct = Math.round((xhr.loaded / xhr.total) * 100);
+          progressBar.style.width = pct + '%';
+          loaderText.textContent = 'Loading ' + s.label + '… ' + pct + '%';
+        }
+      },
+      function () {
+        loaderText.textContent = 'Could not load "' + s.file + '". Check the filename and that it is in this folder.';
+        loader.querySelector('.spinner').style.display = 'none';
+        progressWrap.style.visibility = 'hidden';
+      }
+    );
+  }
+
+  function bindEvents() {
+    const el = renderer.domElement;
+    el.addEventListener('pointerdown', function (e) {
+      isDragging = true;
+      pointerX = e.clientX; pointerY = e.clientY;
+      downLon = targetLon; downLat = targetLat;
+      el.setPointerCapture(e.pointerId);
+      hintBar.classList.add('fade');
+    });
+    el.addEventListener('pointermove', function (e) {
+      if (!isDragging) return;
+      targetLon = downLon - (e.clientX - pointerX) * 0.12 * (fov / 75);
+      targetLat = downLat + (e.clientY - pointerY) * 0.12 * (fov / 75);
+      targetLat = Math.max(-85, Math.min(85, targetLat));
+    });
+    el.addEventListener('pointerup', function () { isDragging = false; });
+    el.addEventListener('pointerleave', function () { isDragging = false; });
+    el.addEventListener('wheel', function (e) {
+      e.preventDefault();
+      fov = Math.max(25, Math.min(95, fov + e.deltaY * 0.05));
+      camera.fov = fov; camera.updateProjectionMatrix();
+    }, { passive: false });
+    window.addEventListener('resize', onResize);
+  }
+
+  function onResize() {
+    if (!renderer) return;
+    const w = viewer.clientWidth || window.innerWidth;
+    const h = viewer.clientHeight || window.innerHeight;
+    if (w === 0 || h === 0) return;
+    camera.aspect = w / h;
+    camera.updateProjectionMatrix();
+    renderer.setSize(w, h);
+  }
+
+  function animate() {
+    requestAnimationFrame(animate);
+    lon += (targetLon - lon) * 0.1;
+    lat += (targetLat - lat) * 0.1;
+    const phi = THREE.MathUtils.degToRad(90 - lat);
+    const theta = THREE.MathUtils.degToRad(lon);
+    camera.lookAt(new THREE.Vector3(
+      500 * Math.sin(phi) * Math.cos(theta),
+      500 * Math.cos(phi),
+      500 * Math.sin(phi) * Math.sin(theta)
+    ));
+    renderer.render(scene, camera);
+  }
+
+  init();
+})();
+</script>
+
+<style>
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  html, body { height: 100%; }
+  #app {
+    position: relative; width: 100%; height: 100vh; overflow: hidden;
+    font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+    background: #0b0d10; color: #e7eaee;
+  }
+  #viewer { position: absolute; inset: 0; cursor: grab; }
+  #viewer:active { cursor: grabbing; }
+  #viewer canvas { display: block; }
+
+  #watermark-layer { position: absolute; inset: 0; pointer-events: none; z-index: 5; }
+  .wm-img { position: absolute; bottom: 24px; right: 28px; width: 180px; opacity: 0.85; }
+
+  /* Loader */
+  #loader {
+    position: absolute; inset: 0; z-index: 7;
+    display: none; flex-direction: column; align-items: center; justify-content: center;
+    background: #0b0d10; gap: 16px; padding: 24px; text-align: center;
+  }
+  #loader-text { font-size: 14px; color: #79828f; max-width: 340px; line-height: 1.5; }
+  .spinner {
+    width: 38px; height: 38px; border-radius: 50%;
+    border: 3px solid rgba(255,255,255,0.12); border-top-color: #C8102E;
+    animation: spin 0.8s linear infinite;
+  }
+  @keyframes spin { to { transform: rotate(360deg); } }
+  #progress-wrap {
+    width: 220px; height: 5px; border-radius: 999px;
+    background: rgba(255,255,255,0.12); overflow: hidden; visibility: hidden;
+  }
+  #progress-bar { height: 100%; width: 0%; background: #C8102E; transition: width 0.15s; }
+
+  /* Scene switcher */
+  #scene-bar {
+    position: absolute; top: 16px; left: 50%; transform: translateX(-50%);
+    z-index: 8; max-width: calc(100% - 32px);
+    background: rgba(20,24,29,0.78); backdrop-filter: blur(18px);
+    -webkit-backdrop-filter: blur(18px);
+    border: 1px solid rgba(255,255,255,0.08); border-radius: 12px; padding: 6px;
+  }
+  #scene-scroll {
+    display: flex; gap: 4px; overflow-x: auto; scrollbar-width: thin;
+    scrollbar-color: rgba(255,255,255,0.25) transparent;
+  }
+  #scene-scroll::-webkit-scrollbar { height: 5px; }
+  #scene-scroll::-webkit-scrollbar-thumb { background: rgba(255,255,255,0.2); border-radius: 999px; }
+  .scene-btn {
+    flex: 0 0 auto; padding: 8px 14px; border-radius: 8px; border: none;
+    background: transparent; color: #aab2bd; font-size: 13px; font-weight: 500;
+    cursor: pointer; white-space: nowrap; transition: all 0.15s;
+  }
+  .scene-btn:hover { background: rgba(255,255,255,0.07); color: #e7eaee; }
+  .scene-btn.active { background: #C8102E; color: #fff; }
+
+  #hint-bar {
+    position: absolute; bottom: 24px; left: 50%; transform: translateX(-50%);
+    z-index: 6; font-size: 12px; color: #cfd5dd;
+    background: rgba(20,24,29,0.7); backdrop-filter: blur(10px);
+    -webkit-backdrop-filter: blur(10px); padding: 8px 16px; border-radius: 999px;
+    border: 1px solid rgba(255,255,255,0.08);
+    transition: opacity 0.6s; pointer-events: none;
+  }
+  #hint-bar.fade { opacity: 0; }
+</style>
