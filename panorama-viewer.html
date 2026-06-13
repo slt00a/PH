@@ -1,0 +1,560 @@
+<!--
+  ============================================================
+  PARKHILL 360° VIRTUAL TOUR  —  hotspots + mini map + placement helper
+  ============================================================
+
+  SETUP (same folder rules as before):
+    - Save this file as index.html
+    - Put all panorama .jpg files and the logo .png in the SAME folder
+    - (Optional) put a top-down floor-plan image in the folder for the mini map
+
+  EDIT THE "SCENES" LIST BELOW:
+    Each scene has:
+      id        a short unique name (no spaces), used to link hotspots
+      label     the button / map text
+      file      the panorama image filename
+      map       {x, y} the scene's dot position on the mini map, in PERCENT (0-100)
+      hotspots  list of clickable markers, each:
+                  { to: "<id of target scene>", lon: <number>, lat: <number>, label: "..." }
+                lon/lat are the 3D direction of the marker (degrees).
+
+  DON'T KNOW THE lon/lat NUMBERS?  Use the PLACEMENT HELPER:
+    1. Open the page, turn ON "Placement mode" (button, bottom-left).
+    2. Aim the view at where you want a hotspot and click. A readout shows
+       the lon/lat. Copy those numbers into a hotspot entry below.
+    3. Repeat per hotspot, then turn placement mode off.
+
+  MINI MAP IMAGE (optional):
+    Set MAP_IMAGE to a floor-plan filename, or leave "" for a plain panel.
+  ============================================================
+-->
+<script>
+  const MAP_IMAGE = ""; // e.g. "floorplan.png", or "" for none
+
+  const SCENES = [
+    {
+      id: "airlines", label: "Airlines", file: "AIRLINES_01.jpg",
+      map: { x: 20, y: 30 },
+      hotspots: [
+        { to: "car_rentals", lon: 90, lat: -10, label: "Car Rentals" }
+      ]
+    },
+    {
+      id: "car_rentals", label: "Car Rentals", file: "CAR_RENTALS_01.jpg",
+      map: { x: 50, y: 30 },
+      hotspots: [
+        { to: "airlines", lon: -90, lat: -10, label: "Airlines" },
+        { to: "bridge", lon: 0, lat: -10, label: "Bridge" }
+      ]
+    },
+    {
+      id: "bridge", label: "Bridge", file: "BRIDGE_01.jpg",
+      map: { x: 80, y: 30 },
+      hotspots: [
+        { to: "car_rentals", lon: 180, lat: -10, label: "Car Rentals" },
+        { to: "holding_1", lon: 0, lat: -10, label: "Holding" }
+      ]
+    },
+    {
+      id: "holding_1", label: "Holding 1", file: "HOLDING_01.jpg",
+      map: { x: 80, y: 60 },
+      hotspots: [
+        { to: "bridge", lon: 180, lat: -10, label: "Bridge" },
+        { to: "holding_2", lon: 90, lat: -10, label: "Holding 2" }
+      ]
+    },
+    {
+      id: "holding_2", label: "Holding 2", file: "HOLDING_02.jpg",
+      map: { x: 50, y: 60 },
+      hotspots: [
+        { to: "holding_1", lon: -90, lat: -10, label: "Holding 1" },
+        { to: "mezzanine_1", lon: 0, lat: -10, label: "Mezzanine" }
+      ]
+    },
+    {
+      id: "mezzanine_1", label: "Mezzanine 1", file: "MEZZANINE_01.jpg",
+      map: { x: 50, y: 85 },
+      hotspots: [
+        { to: "holding_2", lon: 180, lat: -10, label: "Holding 2" },
+        { to: "mezzanine_2", lon: 90, lat: -10, label: "Mezzanine 2" }
+      ]
+    },
+    {
+      id: "mezzanine_2", label: "Mezzanine 2", file: "MEZZANINE_02.jpg",
+      map: { x: 65, y: 85 },
+      hotspots: [
+        { to: "mezzanine_1", lon: -90, lat: -10, label: "Mezzanine 1" },
+        { to: "mezzanine_3", lon: 90, lat: -10, label: "Mezzanine 3" }
+      ]
+    },
+    {
+      id: "mezzanine_3", label: "Mezzanine 3", file: "MEZZANINE_03.jpg",
+      map: { x: 80, y: 85 },
+      hotspots: [
+        { to: "mezzanine_2", lon: -90, lat: -10, label: "Mezzanine 2" }
+      ]
+    }
+  ];
+
+  const LOGO = "1 - Parkhill - Red.png";
+</script>
+
+<div id="app">
+  <div id="viewer"></div>
+  <div id="watermark-layer"></div>
+
+  <div id="loader">
+    <div class="spinner"></div>
+    <p id="loader-text">Loading…</p>
+    <div id="progress-wrap"><div id="progress-bar"></div></div>
+  </div>
+
+  <!-- Scene buttons -->
+  <div id="scene-bar"><div id="scene-scroll"></div></div>
+
+  <!-- Mini map -->
+  <div id="map-panel">
+    <div id="map-header">
+      <span>Map</span>
+      <button id="map-toggle" title="Hide/show">–</button>
+    </div>
+    <div id="map-body"></div>
+  </div>
+
+  <!-- Placement helper -->
+  <div id="place-tools">
+    <button id="place-toggle">Placement mode: OFF</button>
+    <div id="place-readout" class="hidden">
+      <div id="place-coords">lon: 0, lat: 0</div>
+      <div id="place-hint">Aim &amp; click in the scene to capture a hotspot direction.</div>
+    </div>
+  </div>
+
+  <div id="hint-bar">Drag to look around · Scroll to zoom · Click a marker to move</div>
+</div>
+
+<script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
+<script>
+(function () {
+  const viewer = document.getElementById('viewer');
+  const wmLayer = document.getElementById('watermark-layer');
+  const hintBar = document.getElementById('hint-bar');
+  const loader = document.getElementById('loader');
+  const loaderText = document.getElementById('loader-text');
+  const progressWrap = document.getElementById('progress-wrap');
+  const progressBar = document.getElementById('progress-bar');
+  const sceneScroll = document.getElementById('scene-scroll');
+  const mapBody = document.getElementById('map-body');
+  const placeToggle = document.getElementById('place-toggle');
+  const placeReadout = document.getElementById('place-readout');
+  const placeCoords = document.getElementById('place-coords');
+
+  let scene, camera, renderer, mesh;
+  let lon = 0, lat = 0, targetLon = 0, targetLat = 0;
+  let fov = 75;
+  let isDragging = false, didDrag = false;
+  let pointerX = 0, pointerY = 0, downLon = 0, downLat = 0;
+  let currentIndex = -1;
+  let placementMode = false;
+
+  const byId = {};
+  SCENES.forEach(function (s, i) { byId[s.id] = i; });
+
+  function init() {
+    scene = new THREE.Scene();
+    const w = viewer.clientWidth || window.innerWidth;
+    const h = viewer.clientHeight || window.innerHeight;
+    camera = new THREE.PerspectiveCamera(fov, w / h, 1, 1100);
+
+    const geo = new THREE.SphereGeometry(500, 60, 40);
+    geo.scale(-1, 1, 1);
+    mesh = new THREE.Mesh(geo, new THREE.MeshBasicMaterial({ color: 0x111418 }));
+    scene.add(mesh);
+
+    renderer = new THREE.WebGLRenderer({ antialias: true });
+    renderer.setPixelRatio(window.devicePixelRatio);
+    renderer.setSize(w, h);
+    viewer.appendChild(renderer.domElement);
+
+    bindEvents();
+    onResize();
+    animate();
+    requestAnimationFrame(onResize);
+    window.addEventListener('load', onResize);
+    setTimeout(onResize, 200);
+
+    buildSceneButtons();
+    buildMap();
+    addLogo();
+
+    if (SCENES.length) loadScene(0);
+    else { loader.style.display = 'none'; hintBar.style.display = 'none'; }
+  }
+
+  function buildSceneButtons() {
+    SCENES.forEach(function (s, i) {
+      const b = document.createElement('button');
+      b.className = 'scene-btn';
+      b.textContent = s.label;
+      b.addEventListener('click', function () { if (i !== currentIndex) loadScene(i); });
+      sceneScroll.appendChild(b);
+    });
+  }
+
+  function buildMap() {
+    const panel = document.getElementById('map-panel');
+    if (MAP_IMAGE) {
+      mapBody.style.backgroundImage = 'url("' + MAP_IMAGE + '")';
+      mapBody.style.backgroundSize = 'cover';
+      mapBody.style.backgroundPosition = 'center';
+    }
+    SCENES.forEach(function (s, i) {
+      const dot = document.createElement('button');
+      dot.className = 'map-dot';
+      dot.style.left = s.map.x + '%';
+      dot.style.top = s.map.y + '%';
+      dot.title = s.label;
+      dot.dataset.idx = i;
+      dot.addEventListener('click', function () { if (i !== currentIndex) loadScene(i); });
+      mapBody.appendChild(dot);
+    });
+  }
+
+  function setActiveMapDot(i) {
+    mapBody.querySelectorAll('.map-dot').forEach(function (d) {
+      d.classList.toggle('active', +d.dataset.idx === i);
+    });
+  }
+
+  function addLogo() {
+    if (!LOGO) return;
+    const img = document.createElement('img');
+    img.className = 'wm-img';
+    img.src = LOGO;
+    img.onerror = function () { this.style.display = 'none'; };
+    wmLayer.appendChild(img);
+  }
+
+  function loadScene(i) {
+    const s = SCENES[i];
+    loader.style.display = 'flex';
+    loaderText.textContent = 'Loading ' + s.label + '…';
+    progressBar.style.width = '0%';
+    progressWrap.style.visibility = 'hidden';
+    loader.querySelector('.spinner').style.display = '';
+    clearHotspots();
+
+    new THREE.TextureLoader().load(
+      s.file,
+      function (texture) {
+        texture.minFilter = THREE.LinearFilter;
+        mesh.material.map = texture;
+        mesh.material.color.set(0xffffff);
+        mesh.material.needsUpdate = true;
+        loader.style.display = 'none';
+        hintBar.style.display = '';
+        currentIndex = i;
+        setActiveButton(i);
+        setActiveMapDot(i);
+        buildHotspots(s);
+      },
+      function (xhr) {
+        if (xhr.lengthComputable) {
+          progressWrap.style.visibility = 'visible';
+          const pct = Math.round((xhr.loaded / xhr.total) * 100);
+          progressBar.style.width = pct + '%';
+          loaderText.textContent = 'Loading ' + s.label + '… ' + pct + '%';
+        }
+      },
+      function () {
+        loaderText.textContent = 'Could not load "' + s.file + '". Check the filename.';
+        loader.querySelector('.spinner').style.display = 'none';
+        progressWrap.style.visibility = 'hidden';
+      }
+    );
+  }
+
+  function setActiveButton(i) {
+    sceneScroll.querySelectorAll('.scene-btn').forEach(function (b, idx) {
+      b.classList.toggle('active', idx === i);
+    });
+  }
+
+  // ---------- Hotspots ----------
+  let hotspots = [];
+
+  function clearHotspots() {
+    hotspots.forEach(function (h) { if (h.el && h.el.parentNode) h.el.parentNode.removeChild(h.el); });
+    hotspots = [];
+  }
+
+  function buildHotspots(s) {
+    (s.hotspots || []).forEach(function (hs) {
+      if (!(hs.to in byId)) return; // skip broken links
+      const el = document.createElement('button');
+      el.className = 'hotspot';
+      el.innerHTML = '<span class="hs-ring"></span><span class="hs-label">' + (hs.label || SCENES[byId[hs.to]].label) + '</span>';
+      el.addEventListener('click', function (e) {
+        e.stopPropagation();
+        loadScene(byId[hs.to]);
+      });
+      viewer.appendChild(el);
+      hotspots.push({ el: el, lon: hs.lon, lat: hs.lat });
+    });
+  }
+
+  function dirToVector(lonDeg, latDeg) {
+    const phi = THREE.MathUtils.degToRad(90 - latDeg);
+    const theta = THREE.MathUtils.degToRad(lonDeg);
+    return new THREE.Vector3(
+      500 * Math.sin(phi) * Math.cos(theta),
+      500 * Math.cos(phi),
+      500 * Math.sin(phi) * Math.sin(theta)
+    );
+  }
+
+  function updateHotspots() {
+    const w = viewer.clientWidth, h = viewer.clientHeight;
+    hotspots.forEach(function (hsObj) {
+      const v = dirToVector(hsObj.lon, hsObj.lat).clone();
+      const proj = v.project(camera);
+      const inFront = proj.z < 1;
+      if (!inFront || proj.x < -1.2 || proj.x > 1.2 || proj.y < -1.2 || proj.y > 1.2) {
+        hsObj.el.style.display = 'none';
+        return;
+      }
+      hsObj.el.style.display = '';
+      const x = (proj.x * 0.5 + 0.5) * w;
+      const y = (-proj.y * 0.5 + 0.5) * h;
+      hsObj.el.style.left = x + 'px';
+      hsObj.el.style.top = y + 'px';
+    });
+  }
+
+  // ---------- Placement helper ----------
+  placeToggle.addEventListener('click', function () {
+    placementMode = !placementMode;
+    placeToggle.textContent = 'Placement mode: ' + (placementMode ? 'ON' : 'OFF');
+    placeToggle.classList.toggle('on', placementMode);
+    placeReadout.classList.toggle('hidden', !placementMode);
+  });
+
+  function captureClick(clientX, clientY) {
+    const rect = renderer.domElement.getBoundingClientRect();
+    const ndcX = ((clientX - rect.left) / rect.width) * 2 - 1;
+    const ndcY = -(((clientY - rect.top) / rect.height) * 2 - 1);
+    const ray = new THREE.Raycaster();
+    ray.setFromCamera({ x: ndcX, y: ndcY }, camera);
+    const dir = ray.ray.direction.clone().normalize();
+    const latOut = 90 - THREE.MathUtils.radToDeg(Math.acos(dir.y));
+    let lonOut = THREE.MathUtils.radToDeg(Math.atan2(dir.z, dir.x));
+    const lonR = Math.round(lonOut), latR = Math.round(latOut);
+    placeCoords.textContent = 'lon: ' + lonR + ', lat: ' + latR;
+    placeCoords.dataset.copy = '{ to: "TARGET_ID", lon: ' + lonR + ', lat: ' + latR + ', label: "..." }';
+  }
+
+  document.getElementById('place-coords').addEventListener('click', function () {
+    const txt = this.dataset.copy || this.textContent;
+    navigator.clipboard && navigator.clipboard.writeText(txt);
+    const old = this.textContent;
+    this.textContent = 'Copied snippet!';
+    const self = this;
+    setTimeout(function () { self.textContent = old; }, 900);
+  });
+
+  // ---------- Interaction ----------
+  function bindEvents() {
+    const el = renderer.domElement;
+    el.addEventListener('pointerdown', function (e) {
+      isDragging = true; didDrag = false;
+      pointerX = e.clientX; pointerY = e.clientY;
+      downLon = targetLon; downLat = targetLat;
+      el.setPointerCapture(e.pointerId);
+      hintBar.classList.add('fade');
+    });
+    el.addEventListener('pointermove', function (e) {
+      if (!isDragging) return;
+      if (Math.abs(e.clientX - pointerX) + Math.abs(e.clientY - pointerY) > 4) didDrag = true;
+      targetLon = downLon - (e.clientX - pointerX) * 0.12 * (fov / 75);
+      targetLat = downLat + (e.clientY - pointerY) * 0.12 * (fov / 75);
+      targetLat = Math.max(-85, Math.min(85, targetLat));
+    });
+    el.addEventListener('pointerup', function (e) {
+      isDragging = false;
+      if (!didDrag && placementMode) captureClick(e.clientX, e.clientY);
+    });
+    el.addEventListener('pointerleave', function () { isDragging = false; });
+    el.addEventListener('wheel', function (e) {
+      e.preventDefault();
+      fov = Math.max(25, Math.min(95, fov + e.deltaY * 0.05));
+      camera.fov = fov; camera.updateProjectionMatrix();
+    }, { passive: false });
+    window.addEventListener('resize', onResize);
+
+    document.getElementById('map-toggle').addEventListener('click', function () {
+      const p = document.getElementById('map-panel');
+      p.classList.toggle('collapsed');
+      this.textContent = p.classList.contains('collapsed') ? '+' : '–';
+    });
+  }
+
+  function onResize() {
+    if (!renderer) return;
+    const w = viewer.clientWidth || window.innerWidth;
+    const h = viewer.clientHeight || window.innerHeight;
+    if (w === 0 || h === 0) return;
+    camera.aspect = w / h;
+    camera.updateProjectionMatrix();
+    renderer.setSize(w, h);
+  }
+
+  function animate() {
+    requestAnimationFrame(animate);
+    lon += (targetLon - lon) * 0.1;
+    lat += (targetLat - lat) * 0.1;
+    const phi = THREE.MathUtils.degToRad(90 - lat);
+    const theta = THREE.MathUtils.degToRad(lon);
+    camera.lookAt(new THREE.Vector3(
+      500 * Math.sin(phi) * Math.cos(theta),
+      500 * Math.cos(phi),
+      500 * Math.sin(phi) * Math.sin(theta)
+    ));
+    renderer.render(scene, camera);
+    updateHotspots();
+  }
+
+  init();
+})();
+</script>
+
+<style>
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  html, body { height: 100%; }
+  #app {
+    position: relative; width: 100%; height: 100vh; overflow: hidden;
+    font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+    background: #0b0d10; color: #e7eaee;
+  }
+  #viewer { position: absolute; inset: 0; cursor: grab; }
+  #viewer:active { cursor: grabbing; }
+  #viewer canvas { display: block; }
+
+  #watermark-layer { position: absolute; inset: 0; pointer-events: none; z-index: 5; }
+  .wm-img { position: absolute; bottom: 24px; right: 28px; width: 180px; opacity: 0.85; }
+
+  /* Hotspots */
+  .hotspot {
+    position: absolute; transform: translate(-50%, -50%); z-index: 6;
+    background: none; border: none; cursor: pointer; padding: 0;
+    display: flex; flex-direction: column; align-items: center; gap: 6px;
+  }
+  .hs-ring {
+    width: 34px; height: 34px; border-radius: 50%;
+    border: 3px solid #fff; background: rgba(200,16,46,0.55);
+    box-shadow: 0 0 0 4px rgba(0,0,0,0.25), 0 2px 10px rgba(0,0,0,0.4);
+    transition: transform 0.15s, background 0.15s;
+    animation: pulse 2s infinite;
+  }
+  .hotspot:hover .hs-ring { transform: scale(1.18); background: rgba(200,16,46,0.85); }
+  .hs-label {
+    font-size: 12px; font-weight: 600; color: #fff; white-space: nowrap;
+    background: rgba(20,24,29,0.8); padding: 3px 9px; border-radius: 999px;
+    opacity: 0; transition: opacity 0.15s; pointer-events: none;
+  }
+  .hotspot:hover .hs-label { opacity: 1; }
+  @keyframes pulse {
+    0% { box-shadow: 0 0 0 4px rgba(0,0,0,0.25), 0 0 0 0 rgba(200,16,46,0.5); }
+    70% { box-shadow: 0 0 0 4px rgba(0,0,0,0.25), 0 0 0 14px rgba(200,16,46,0); }
+    100% { box-shadow: 0 0 0 4px rgba(0,0,0,0.25), 0 0 0 0 rgba(200,16,46,0); }
+  }
+
+  /* Loader */
+  #loader {
+    position: absolute; inset: 0; z-index: 9;
+    display: none; flex-direction: column; align-items: center; justify-content: center;
+    background: #0b0d10; gap: 16px; padding: 24px; text-align: center;
+  }
+  #loader-text { font-size: 14px; color: #79828f; max-width: 340px; line-height: 1.5; }
+  .spinner {
+    width: 38px; height: 38px; border-radius: 50%;
+    border: 3px solid rgba(255,255,255,0.12); border-top-color: #C8102E;
+    animation: spin 0.8s linear infinite;
+  }
+  @keyframes spin { to { transform: rotate(360deg); } }
+  #progress-wrap { width: 220px; height: 5px; border-radius: 999px; background: rgba(255,255,255,0.12); overflow: hidden; visibility: hidden; }
+  #progress-bar { height: 100%; width: 0%; background: #C8102E; transition: width 0.15s; }
+
+  /* Scene buttons */
+  #scene-bar {
+    position: absolute; top: 16px; left: 50%; transform: translateX(-50%);
+    z-index: 8; max-width: calc(100% - 32px);
+    background: rgba(20,24,29,0.78); backdrop-filter: blur(18px); -webkit-backdrop-filter: blur(18px);
+    border: 1px solid rgba(255,255,255,0.08); border-radius: 12px; padding: 6px;
+  }
+  #scene-scroll { display: flex; gap: 4px; overflow-x: auto; scrollbar-width: thin; }
+  #scene-scroll::-webkit-scrollbar { height: 5px; }
+  #scene-scroll::-webkit-scrollbar-thumb { background: rgba(255,255,255,0.2); border-radius: 999px; }
+  .scene-btn {
+    flex: 0 0 auto; padding: 8px 14px; border-radius: 8px; border: none;
+    background: transparent; color: #aab2bd; font-size: 13px; font-weight: 500;
+    cursor: pointer; white-space: nowrap; transition: all 0.15s;
+  }
+  .scene-btn:hover { background: rgba(255,255,255,0.07); color: #e7eaee; }
+  .scene-btn.active { background: #C8102E; color: #fff; }
+
+  /* Mini map */
+  #map-panel {
+    position: absolute; bottom: 20px; left: 20px; z-index: 8;
+    width: 220px;
+    background: rgba(20,24,29,0.82); backdrop-filter: blur(18px); -webkit-backdrop-filter: blur(18px);
+    border: 1px solid rgba(255,255,255,0.08); border-radius: 12px; overflow: hidden;
+    transition: all 0.2s;
+  }
+  #map-header {
+    display: flex; align-items: center; justify-content: space-between;
+    padding: 8px 12px; font-size: 12px; font-weight: 600; color: #aab2bd;
+    border-bottom: 1px solid rgba(255,255,255,0.06);
+  }
+  #map-toggle { background: none; border: none; color: #aab2bd; cursor: pointer; font-size: 16px; line-height: 1; padding: 0 4px; }
+  #map-body {
+    position: relative; width: 100%; height: 150px;
+    background: #1a1f26; transition: height 0.2s;
+  }
+  #map-panel.collapsed #map-body { height: 0; }
+  .map-dot {
+    position: absolute; width: 14px; height: 14px; transform: translate(-50%, -50%);
+    border-radius: 50%; border: 2px solid #fff; background: rgba(170,178,189,0.6);
+    cursor: pointer; padding: 0; transition: all 0.15s;
+  }
+  .map-dot:hover { background: #fff; }
+  .map-dot.active { background: #C8102E; border-color: #fff; box-shadow: 0 0 0 4px rgba(200,16,46,0.3); }
+
+  /* Placement helper */
+  #place-tools { position: absolute; bottom: 20px; right: 20px; z-index: 8; text-align: right; }
+  #place-toggle {
+    padding: 8px 14px; border-radius: 8px; cursor: pointer;
+    background: rgba(20,24,29,0.82); color: #aab2bd; font-size: 12px; font-weight: 600;
+    border: 1px solid rgba(255,255,255,0.08); backdrop-filter: blur(18px); -webkit-backdrop-filter: blur(18px);
+  }
+  #place-toggle.on { background: #C8102E; color: #fff; border-color: #C8102E; }
+  #place-readout {
+    margin-top: 8px; padding: 10px 12px; border-radius: 10px;
+    background: rgba(20,24,29,0.92); border: 1px solid rgba(255,255,255,0.1); max-width: 240px;
+  }
+  #place-coords {
+    font-family: ui-monospace, Menlo, Consolas, monospace; font-size: 13px; color: #fff;
+    cursor: pointer; padding: 4px 0; user-select: all;
+  }
+  #place-coords:hover { color: #ff6b81; }
+  #place-hint { font-size: 11px; color: #79828f; margin-top: 4px; line-height: 1.4; }
+
+  #hint-bar {
+    position: absolute; bottom: 76px; left: 50%; transform: translateX(-50%);
+    z-index: 6; font-size: 12px; color: #cfd5dd;
+    background: rgba(20,24,29,0.7); backdrop-filter: blur(10px); -webkit-backdrop-filter: blur(10px);
+    padding: 8px 16px; border-radius: 999px; border: 1px solid rgba(255,255,255,0.08);
+    transition: opacity 0.6s; pointer-events: none; white-space: nowrap;
+  }
+  #hint-bar.fade { opacity: 0; }
+  .hidden { display: none; }
+</style>
