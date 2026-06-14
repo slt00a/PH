@@ -1,0 +1,394 @@
+<!--
+  ============================================================
+  PARKHILL 360° VIEWER  —  responsive scene navigation
+  ============================================================
+
+  SETUP:
+    - Save this file as index.html
+    - Put all panorama .jpg files and the logo .png in the SAME folder
+    - Edit the SCENES list and LOGO below to match your filenames
+    - Upload the folder to your host (GitHub Pages / Netlify) and open the URL
+
+  NOTE: must be opened over http/https (a host or local server),
+  not by double-clicking the file, or the images won't load.
+  ============================================================
+-->
+<script>
+  const SCENES = [
+    { label: "Airlines",     file: "AIRLINES_01.jpg" },
+    { label: "Bridge",       file: "BRIDGE_01.jpg" },
+    { label: "Car Rentals",  file: "CAR_RENTALS_01.jpg" },
+    { label: "Holding 1",    file: "HOLDING_01.jpg" },
+    { label: "Holding 2",    file: "HOLDING_02.jpg" },
+    { label: "Mezzanine 1",  file: "MEZZANINE_01.jpg" },
+    { label: "Mezzanine 2",  file: "MEZZANINE_02.jpg" },
+    { label: "Mezzanine 3",  file: "MEZZANINE_03.jpg" }
+  ];
+
+  const LOGO = "1 - Parkhill - Red.png";
+</script>
+
+  <div id="app">
+  <div id="viewer"></div>
+
+  <div id="loader">
+    <div class="spinner"></div>
+    <p id="loader-text">Loading…</p>
+    <div id="progress-wrap"><div id="progress-bar"></div></div>
+  </div>
+
+  <!-- Logo (bottom-left) -->
+  <img id="logo" alt="Parkhill" />
+
+  <!-- Hamburger nav (bottom-right) -->
+  <div id="nav">
+    <button id="menu-btn" aria-label="Menu">
+      <span></span><span></span><span></span>
+    </button>
+    <div id="nav-panel">
+      <div id="nav-title">Scenes</div>
+      <div id="scene-list"></div>
+    </div>
+  </div>
+  <div id="nav-backdrop"></div>
+
+  <div id="hint-bar">Drag to look around · Scroll to zoom</div>
+</div>
+
+<script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
+<script>
+(function () {
+  const viewer = document.getElementById('viewer');
+  const hintBar = document.getElementById('hint-bar');
+  const loader = document.getElementById('loader');
+  const loaderText = document.getElementById('loader-text');
+  const progressWrap = document.getElementById('progress-wrap');
+  const progressBar = document.getElementById('progress-bar');
+  const sceneList = document.getElementById('scene-list');
+  const nav = document.getElementById('nav');
+  const menuBtn = document.getElementById('menu-btn');
+  const backdrop = document.getElementById('nav-backdrop');
+
+  let scene, camera, renderer, mesh;
+  let lon = 0, lat = 0, targetLon = 0, targetLat = 0;
+  let fov = 75;
+  let isDragging = false;
+  let pointerX = 0, pointerY = 0, downLon = 0, downLat = 0;
+  let currentIndex = -1;
+  let availableScenes = [];   // only scenes whose image exists on the server
+
+  function init() {
+    scene = new THREE.Scene();
+    const w = viewer.clientWidth || window.innerWidth;
+    const h = viewer.clientHeight || window.innerHeight;
+    camera = new THREE.PerspectiveCamera(fov, w / h, 1, 1100);
+
+    const geo = new THREE.SphereGeometry(500, 60, 40);
+    geo.scale(-1, 1, 1);
+    mesh = new THREE.Mesh(geo, new THREE.MeshBasicMaterial({ color: 0x111418 }));
+    scene.add(mesh);
+
+    renderer = new THREE.WebGLRenderer({ antialias: true });
+    renderer.setPixelRatio(window.devicePixelRatio);
+    renderer.setSize(w, h);
+    viewer.appendChild(renderer.domElement);
+
+    bindEvents();
+    onResize();
+    animate();
+    requestAnimationFrame(onResize);
+    window.addEventListener('load', onResize);
+    setTimeout(onResize, 200);
+
+    addLogo();
+    checkScenesThenBuild();
+  }
+
+  // Verify each scene's image exists before adding it to the menu.
+  // Uses a HEAD request so we only fetch headers, not the whole image.
+  function checkScenesThenBuild() {
+    loaderText.textContent = 'Checking scenes…';
+    loader.style.display = 'flex';
+
+    const checks = SCENES.map(function (s) {
+      return fetch(s.file, { method: 'HEAD' })
+        .then(function (res) { return { scene: s, ok: res.ok }; })
+        .catch(function () { return { scene: s, ok: false }; });
+    });
+
+    Promise.all(checks).then(function (results) {
+      availableScenes = results.filter(function (r) { return r.ok; }).map(function (r) { return r.scene; });
+      const missing = results.filter(function (r) { return !r.ok; }).map(function (r) { return r.scene.file; });
+      if (missing.length) console.warn('Skipped missing images:', missing);
+
+      buildSceneList();
+
+      if (availableScenes.length) {
+        loadScene(0);
+      } else {
+        loader.querySelector('.spinner').style.display = 'none';
+        loaderText.textContent = 'No scene images found. Check that the .jpg files are in the same folder.';
+        hintBar.style.display = 'none';
+      }
+    });
+  }
+
+  function buildSceneList() {
+    sceneList.innerHTML = '';
+    availableScenes.forEach(function (s, i) {
+      const b = document.createElement('button');
+      b.className = 'scene-btn';
+      b.textContent = s.label;
+      b.addEventListener('click', function () {
+        if (i !== currentIndex) loadScene(i);
+        closeMenu();
+      });
+      sceneList.appendChild(b);
+    });
+  }
+
+  function setActiveButton(i) {
+    sceneList.querySelectorAll('.scene-btn').forEach(function (b, idx) {
+      b.classList.toggle('active', idx === i);
+    });
+  }
+
+  function addLogo() {
+    const img = document.getElementById('logo');
+    if (!LOGO) { img.style.display = 'none'; return; }
+    img.src = LOGO;
+    img.onerror = function () { this.style.display = 'none'; };
+  }
+
+  function loadScene(i) {
+    const s = availableScenes[i];
+    loader.style.display = 'flex';
+    loaderText.textContent = 'Loading ' + s.label + '…';
+    progressBar.style.width = '0%';
+    progressWrap.style.visibility = 'hidden';
+    loader.querySelector('.spinner').style.display = '';
+
+    new THREE.TextureLoader().load(
+      s.file,
+      function (texture) {
+        texture.minFilter = THREE.LinearFilter;
+        mesh.material.map = texture;
+        mesh.material.color.set(0xffffff);
+        mesh.material.needsUpdate = true;
+        loader.style.display = 'none';
+        hintBar.style.display = '';
+        currentIndex = i;
+        setActiveButton(i);
+      },
+      function (xhr) {
+        if (xhr.lengthComputable) {
+          progressWrap.style.visibility = 'visible';
+          const pct = Math.round((xhr.loaded / xhr.total) * 100);
+          progressBar.style.width = pct + '%';
+          loaderText.textContent = 'Loading ' + s.label + '… ' + pct + '%';
+        }
+      },
+      function () {
+        loaderText.textContent = 'Could not load "' + s.file + '".';
+        loader.querySelector('.spinner').style.display = 'none';
+        progressWrap.style.visibility = 'hidden';
+      }
+    );
+  }
+
+  // ---------- Menu open/close (mobile) ----------
+  function openMenu() { nav.classList.add('open'); backdrop.classList.add('show'); }
+  function closeMenu() { nav.classList.remove('open'); backdrop.classList.remove('show'); }
+  menuBtn.addEventListener('click', function () {
+    nav.classList.contains('open') ? closeMenu() : openMenu();
+  });
+  backdrop.addEventListener('click', closeMenu);
+
+  // ---------- Interaction ----------
+  function bindEvents() {
+    const el = renderer.domElement;
+    el.addEventListener('pointerdown', function (e) {
+      isDragging = true;
+      pointerX = e.clientX; pointerY = e.clientY;
+      downLon = targetLon; downLat = targetLat;
+      el.setPointerCapture(e.pointerId);
+      hintBar.classList.add('fade');
+    });
+    el.addEventListener('pointermove', function (e) {
+      if (!isDragging) return;
+      targetLon = downLon - (e.clientX - pointerX) * 0.12 * (fov / 75);
+      targetLat = downLat + (e.clientY - pointerY) * 0.12 * (fov / 75);
+      targetLat = Math.max(-85, Math.min(85, targetLat));
+    });
+    el.addEventListener('pointerup', function () { isDragging = false; });
+    el.addEventListener('pointerleave', function () { isDragging = false; });
+    el.addEventListener('wheel', function (e) {
+      e.preventDefault();
+      fov = Math.max(25, Math.min(95, fov + e.deltaY * 0.05));
+      camera.fov = fov; camera.updateProjectionMatrix();
+    }, { passive: false });
+
+    el.addEventListener('touchmove', function (e) { e.preventDefault(); }, { passive: false });
+    document.body.addEventListener('touchmove', function (e) {
+      if (e.target.closest('#nav-panel')) return; // allow scrolling inside the menu
+      e.preventDefault();
+    }, { passive: false });
+
+    window.addEventListener('resize', onResize);
+  }
+
+  function onResize() {
+    if (!renderer) return;
+    const w = viewer.clientWidth || window.innerWidth;
+    const h = viewer.clientHeight || window.innerHeight;
+    if (w === 0 || h === 0) return;
+    camera.aspect = w / h;
+    camera.updateProjectionMatrix();
+    renderer.setSize(w, h);
+  }
+
+  function animate() {
+    requestAnimationFrame(animate);
+    lon += (targetLon - lon) * 0.1;
+    lat += (targetLat - lat) * 0.1;
+    const phi = THREE.MathUtils.degToRad(90 - lat);
+    const theta = THREE.MathUtils.degToRad(lon);
+    camera.lookAt(new THREE.Vector3(
+      500 * Math.sin(phi) * Math.cos(theta),
+      500 * Math.cos(phi),
+      500 * Math.sin(phi) * Math.sin(theta)
+    ));
+    renderer.render(scene, camera);
+  }
+
+  init();
+})();
+</script>
+
+<style>
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  html, body {
+    height: 100%; overflow: hidden; position: fixed; width: 100%;
+    overscroll-behavior: none; touch-action: none; -webkit-touch-callout: none;
+  }
+  #app {
+    position: relative; width: 100%;
+    height: 100vh; height: 100dvh; overflow: hidden;
+    font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+    background: #0b0d10; color: #e7eaee;
+  }
+  #viewer { position: absolute; inset: 0; cursor: grab; touch-action: none; }
+  #viewer:active { cursor: grabbing; }
+  #viewer canvas { display: block; }
+
+  #watermark-layer { position: absolute; inset: 0; pointer-events: none; z-index: 5; }
+
+  /* Logo: bottom-left */
+  #logo { position: absolute; bottom: 20px; left: 24px; width: 160px; opacity: 0.85; display: block; z-index: 8; }
+
+  /* Loader */
+  #loader {
+    position: absolute; inset: 0; z-index: 9;
+    display: none; flex-direction: column; align-items: center; justify-content: center;
+    background: #0b0d10; gap: 16px; padding: 24px; text-align: center;
+  }
+  #loader-text { font-size: 14px; color: #79828f; max-width: 340px; line-height: 1.5; }
+  .spinner {
+    width: 38px; height: 38px; border-radius: 50%;
+    border: 3px solid rgba(255,255,255,0.12); border-top-color: #C8102E;
+    animation: spin 0.8s linear infinite;
+  }
+  @keyframes spin { to { transform: rotate(360deg); } }
+  #progress-wrap { width: 220px; height: 5px; border-radius: 999px; background: rgba(255,255,255,0.12); overflow: hidden; visibility: hidden; }
+  #progress-bar { height: 100%; width: 0%; background: #C8102E; transition: width 0.15s; }
+
+  /* ---------- Navigation (hamburger at all sizes) ---------- */
+  #nav { position: absolute; bottom: 20px; right: 24px; z-index: 8; }
+  #menu-btn {
+    display: flex;
+    width: 46px; height: 46px;
+    background: none; border: none; cursor: pointer;
+    flex-direction: column; align-items: center; justify-content: center; gap: 5px;
+    padding: 0;
+  }
+  #menu-btn span {
+    display: block; width: 26px; height: 3px; background: #C8102E; border-radius: 2px;
+    transition: transform 0.25s, opacity 0.25s;
+    filter: drop-shadow(0 1px 2px rgba(0,0,0,0.35));
+  }
+
+  /* Menu panel opens upward from the button */
+  #nav-panel {
+    position: absolute; bottom: 56px; right: 0;
+    width: 260px; max-height: 70vh; overflow-y: auto;
+    padding: 8px; border-radius: 14px;
+    background: rgba(20,24,29,0.82); backdrop-filter: blur(18px); -webkit-backdrop-filter: blur(18px);
+    border: 1px solid rgba(255,255,255,0.08);
+    opacity: 0; transform: translateY(8px) scale(0.98);
+    pointer-events: none; transition: opacity 0.22s, transform 0.22s;
+  }
+  #nav.open #nav-panel { opacity: 1; transform: translateY(0) scale(1); pointer-events: auto; }
+
+  /* Hamburger morphs into an X when open */
+  #nav.open #menu-btn span:nth-child(1) { transform: translateY(6px) rotate(45deg); }
+  #nav.open #menu-btn span:nth-child(2) { opacity: 0; }
+  #nav.open #menu-btn span:nth-child(3) { transform: translateY(-6px) rotate(-45deg); }
+
+  #nav-title {
+    display: block; font-size: 11px; font-weight: 600; text-transform: uppercase;
+    letter-spacing: 0.6px; color: #6b7480; padding: 8px 10px 6px;
+  }
+  #scene-list { display: flex; flex-direction: column; gap: 2px; }
+  .scene-btn {
+    width: 100%; text-align: left; border: none;
+    padding: 12px 14px; border-radius: 8px;
+    background: transparent; color: #aab2bd; font-size: 14px; font-weight: 500;
+    cursor: pointer; white-space: nowrap; transition: all 0.15s;
+  }
+  .scene-btn:hover { background: rgba(255,255,255,0.07); color: #e7eaee; }
+  .scene-btn.active { background: #C8102E; color: #fff; }
+
+  #nav-backdrop {
+    position: absolute; inset: 0; z-index: 7; background: rgba(0,0,0,0.4);
+    opacity: 0; pointer-events: none; transition: opacity 0.25s;
+  }
+  #nav-backdrop.show { opacity: 1; pointer-events: auto; }
+
+  #hint-bar {
+    position: absolute; bottom: 20px; left: 50%; transform: translateX(-50%);
+    z-index: 6; font-size: 12px; color: #cfd5dd;
+    background: rgba(20,24,29,0.7); backdrop-filter: blur(10px); -webkit-backdrop-filter: blur(10px);
+    padding: 8px 16px; border-radius: 999px; border: 1px solid rgba(255,255,255,0.08);
+    transition: opacity 0.6s; pointer-events: none; white-space: nowrap;
+  }
+  #hint-bar.fade { opacity: 0; }
+
+  /* ---------- Medium screens (tablets / small laptops) ---------- */
+  @media (max-width: 1024px) {
+    #menu-btn { width: 52px; height: 52px; border-radius: 13px; }
+    #menu-btn span { width: 23px; }
+    #nav.open #menu-btn span:nth-child(1) { transform: translateY(7px) rotate(45deg); }
+    #nav.open #menu-btn span:nth-child(3) { transform: translateY(-7px) rotate(-45deg); }
+    #nav-panel { bottom: 64px; width: 300px; }
+    .scene-btn { padding: 14px 15px; font-size: 15px; }
+  }
+
+  /* ---------- Small screens (phones) ---------- */
+  @media (max-width: 640px) {
+    #nav { bottom: 16px; right: 148px; }
+
+    /* Bigger hamburger button */
+    #menu-btn { width: 58px; height: 58px; border-radius: 15px; gap: 5px; }
+    #menu-btn span { width: 26px; height: 3px; }
+    #nav.open #menu-btn span:nth-child(1) { transform: translateY(8px) rotate(45deg); }
+    #nav.open #menu-btn span:nth-child(3) { transform: translateY(-8px) rotate(-45deg); }
+
+    /* Bigger menu panel and rows */
+    #nav-panel { bottom: 70px; width: 78vw; max-width: 320px; padding: 10px; border-radius: 16px; }
+    #nav-title { font-size: 12px; padding: 10px 12px 8px; }
+    .scene-btn { padding: 16px 16px; font-size: 17px; border-radius: 10px; }
+
+    .wm-img { width: 120px; top: 16px; left: 16px; }
+    #hint-bar { font-size: 11px; bottom: 16px; padding: 7px 14px; }
+  }
+</style>
