@@ -258,31 +258,6 @@
   }
 
   init();
-
-  // Reload only when rotating FROM portrait TO landscape, which fixes the
-  // iOS viewport-height gap that appears at the bottom in landscape.
-  (function () {
-    function isPortrait() {
-      return window.matchMedia('(orientation: portrait)').matches;
-    }
-    let lastPortrait = isPortrait();
-    function onOrientation() {
-      const nowPortrait = isPortrait();
-      if (lastPortrait && !nowPortrait) {
-        // was portrait, now landscape → reload
-        lastPortrait = nowPortrait;
-        window.location.reload();
-      } else {
-        lastPortrait = nowPortrait;
-      }
-    }
-    if (window.matchMedia) {
-      const mq = window.matchMedia('(orientation: portrait)');
-      if (mq.addEventListener) mq.addEventListener('change', onOrientation);
-      else if (mq.addListener) mq.addListener(onOrientation);
-    }
-    window.addEventListener('orientationchange', onOrientation);
-  })();
 })();
 </script>
 
