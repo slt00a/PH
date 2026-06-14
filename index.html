@@ -54,6 +54,17 @@
     </div>
   </div>
   <div id="nav-backdrop"></div>
+
+  <!-- Shown on mobile when held in landscape -->
+  <div id="rotate-notice">
+    <div class="rotate-inner">
+      <svg width="46" height="46" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5">
+        <rect x="7" y="2" width="10" height="20" rx="2"></rect>
+        <path d="M11 18h2"></path>
+      </svg>
+      <p>Please rotate your device to portrait</p>
+    </div>
+  </div>
 </div>
 
 <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
@@ -258,6 +269,29 @@
   }
 
   init();
+
+  // Reload when the device rotates between portrait and landscape,
+  // so the viewer re-fits cleanly to the new orientation.
+  (function () {
+    function isPortrait() {
+      return window.matchMedia('(orientation: portrait)').matches;
+    }
+    let lastPortrait = isPortrait();
+    function onOrientation() {
+      const nowPortrait = isPortrait();
+      if (nowPortrait !== lastPortrait) {
+        lastPortrait = nowPortrait;
+        window.location.reload();
+      }
+    }
+    if (window.matchMedia) {
+      const mq = window.matchMedia('(orientation: portrait)');
+      // Modern browsers: change event; older Safari: addListener
+      if (mq.addEventListener) mq.addEventListener('change', onOrientation);
+      else if (mq.addListener) mq.addListener(onOrientation);
+    }
+    window.addEventListener('orientationchange', onOrientation);
+  })();
 })();
 </script>
 
@@ -344,6 +378,20 @@
     opacity: 0; pointer-events: none; transition: opacity 0.25s;
   }
   #nav-backdrop.show { opacity: 1; pointer-events: auto; }
+
+  /* Rotate-to-portrait notice (mobile landscape only) */
+  #rotate-notice {
+    position: absolute; inset: 0; z-index: 20; display: none;
+    background: #0b0d10; color: #e7eaee;
+    align-items: center; justify-content: center; text-align: center; padding: 24px;
+  }
+  .rotate-inner { max-width: 280px; }
+  .rotate-inner svg { color: #C8102E; }
+  .rotate-inner p { margin-top: 16px; font-size: 16px; font-weight: 500; color: #aab2bd; line-height: 1.5; }
+  /* Show only on short, wide (landscape) touch-ish screens */
+  @media (max-width: 1024px) and (orientation: landscape) {
+    #rotate-notice { display: flex; }
+  }
 
   /* ---------- Medium / small screens (tablets, laptops, phones) ---------- */
   @media (max-width: 1280px) {
