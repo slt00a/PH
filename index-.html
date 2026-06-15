@@ -54,23 +54,6 @@
     </div>
   </div>
   <div id="nav-backdrop"></div>
-
-  <!-- Panorama gesture hint (center, fades out on first drag) -->
-  <div id="pano-hint" class="hide">
-    <div class="pano-hint-inner">
-      <div class="swipe-track">
-        <span class="arrow left">‹</span>
-        <svg class="hand" width="40" height="40" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round">
-          <path d="M18 11V6.5a1.5 1.5 0 0 0-3 0V11"></path>
-          <path d="M15 10.5V4.5a1.5 1.5 0 0 0-3 0V11"></path>
-          <path d="M12 11V5.5a1.5 1.5 0 0 0-3 0V12"></path>
-          <path d="M9 12V8.5a1.5 1.5 0 0 0-3 0V14c0 3 2 6 5.5 6s5.5-2.5 5.5-6.5V11"></path>
-        </svg>
-        <span class="arrow right">›</span>
-      </div>
-      <p>Drag to look around</p>
-    </div>
-  </div>
 </div>
 
 <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
@@ -85,8 +68,6 @@
   const nav = document.getElementById('nav');
   const menuBtn = document.getElementById('menu-btn');
   const backdrop = document.getElementById('nav-backdrop');
-  const panoHint = document.getElementById('pano-hint');
-  let hintDismissed = false;
 
   let scene, camera, renderer, mesh;
   let lon = 0, lat = 0, targetLon = 0, targetLat = 0;
@@ -195,7 +176,6 @@
         loader.style.display = 'none';
         currentIndex = i;
         setActiveButton(i);
-        if (!hintDismissed) panoHint.classList.remove('hide');
       },
       function (xhr) {
         if (xhr.lengthComputable) {
@@ -211,13 +191,6 @@
         progressWrap.style.visibility = 'hidden';
       }
     );
-  }
-
-  // ---------- Panorama hint ----------
-  function dismissHint() {
-    if (hintDismissed) return;
-    hintDismissed = true;
-    panoHint.classList.add('hide');
   }
 
   // ---------- Menu open/close ----------
@@ -236,7 +209,6 @@
       pointerX = e.clientX; pointerY = e.clientY;
       downLon = targetLon; downLat = targetLat;
       el.setPointerCapture(e.pointerId);
-      dismissHint();
     });
     el.addEventListener('pointermove', function (e) {
       if (!isDragging) return;
@@ -372,44 +344,6 @@
     opacity: 0; pointer-events: none; transition: opacity 0.25s;
   }
   #nav-backdrop.show { opacity: 1; pointer-events: auto; }
-
-  /* ---------- Panorama gesture hint ---------- */
-  #pano-hint {
-    position: absolute; inset: 0; z-index: 6;
-    display: flex; align-items: center; justify-content: center;
-    pointer-events: none; transition: opacity 0.5s ease;
-  }
-  #pano-hint.hide { opacity: 0; }
-  .pano-hint-inner {
-    display: flex; flex-direction: column; align-items: center; gap: 14px;
-    padding: 20px 26px; border-radius: 16px;
-    background: rgba(11,13,16,0.42); backdrop-filter: blur(6px); -webkit-backdrop-filter: blur(6px);
-  }
-  .swipe-track { position: relative; display: flex; align-items: center; gap: 8px; height: 44px; }
-  .swipe-track .hand {
-    color: #fff;
-    animation: swipeHand 2.2s ease-in-out infinite;
-  }
-  .swipe-track .arrow {
-    font-size: 26px; line-height: 1; color: #fff; font-weight: 300;
-    animation: arrowPulse 2.2s ease-in-out infinite;
-  }
-  .swipe-track .arrow.right { animation-delay: 1.1s; }
-  .pano-hint-inner p {
-    font-size: 13px; font-weight: 500; color: #fff; letter-spacing: 0.2px;
-    text-shadow: 0 1px 3px rgba(0,0,0,0.4);
-  }
-  @keyframes swipeHand {
-    0%, 100% { transform: translateX(-14px); }
-    50%      { transform: translateX(14px); }
-  }
-  @keyframes arrowPulse {
-    0%, 100% { opacity: 0.25; }
-    25%      { opacity: 1; }
-  }
-  @media (prefers-reduced-motion: reduce) {
-    .swipe-track .hand, .swipe-track .arrow { animation: none; }
-  }
 
   /* ---------- Medium / small screens (tablets, laptops, phones) ---------- */
   @media (max-width: 1280px) {
