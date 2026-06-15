@@ -95,6 +95,8 @@
   let pointerX = 0, pointerY = 0, downLon = 0, downLat = 0;
   let currentIndex = -1;
   let availableScenes = [];
+  let pinchStartDist = 0, pinchStartFov = 75;   // for two-finger pinch zoom
+  let lastTapTime = 0;                            // for double-tap zoom
 
   function init() {
     scene = new THREE.Scene();
@@ -229,6 +231,18 @@
   backdrop.addEventListener('click', closeMenu);
 
   // ---------- Interaction ----------
+  function setFov(v) {
+    fov = Math.max(25, Math.min(95, v));
+    camera.fov = fov;
+    camera.updateProjectionMatrix();
+  }
+
+  function touchDist(t1, t2) {
+    const dx = t1.clientX - t2.clientX;
+    const dy = t1.clientY - t2.clientY;
+    return Math.sqrt(dx * dx + dy * dy);
+  }
+
   function bindEvents() {
     const el = renderer.domElement;
     el.addEventListener('pointerdown', function (e) {
@@ -248,11 +262,50 @@
     el.addEventListener('pointerleave', function () { isDragging = false; });
     el.addEventListener('wheel', function (e) {
       e.preventDefault();
-      fov = Math.max(25, Math.min(95, fov + e.deltaY * 0.05));
-      camera.fov = fov; camera.updateProjectionMatrix();
+      setFov(fov + e.deltaY * 0.05);
     }, { passive: false });
 
-    el.addEventListener('touchmove', function (e) { e.preventDefault(); }, { passive: false });
+    // ----- Touch: two-finger pinch zoom + double-tap zoom -----
+    el.addEventListener('touchstart', function (e) {
+      if (e.touches.length === 2) {
+        // begin pinch — suppress single-finger drag
+        isDragging = false;
+        pinchStartDist = touchDist(e.touches[0], e.touches[1]);
+        pinchStartFov = fov;
+      } else if (e.touches.length === 1) {
+        // detect double-tap
+        const now = Date.now();
+        if (now - lastTapTime < 300) {
+          // double tap → zoom in, or reset if already zoomed
+          dismissHint();
+          if (fov > 45) setFov(40); else setFov(75);
+          lastTapTime = 0;
+        } else {
+          lastTapTime = now;
+        }
+      }
+    }, { passive: false });
+
+    el.addEventListener('touchmove', function (e) {
+      if (e.touches.length === 2) {
+        // pinch: scale fov by the change in finger distance
+        e.preventDefault();
+        const dist = touchDist(e.touches[0], e.touches[1]);
+        if (pinchStartDist > 0) {
+          const ratio = pinchStartDist / dist;       // fingers apart → ratio<1 → zoom in
+          setFov(pinchStartFov * ratio);
+        }
+        dismissHint();
+      } else {
+        // single-finger drag: keep page from scrolling
+        e.preventDefault();
+      }
+    }, { passive: false });
+
+    el.addEventListener('touchend', function (e) {
+      if (e.touches.length < 2) pinchStartDist = 0;
+    });
+
     document.body.addEventListener('touchmove', function (e) {
       if (e.target.closest('#nav-panel')) return;
       e.preventDefault();
