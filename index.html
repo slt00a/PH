@@ -96,7 +96,6 @@
   let currentIndex = -1;
   let availableScenes = [];
   let pinchStartDist = 0, pinchStartFov = 75;   // for two-finger pinch zoom
-  let lastTapTime = 0;                            // for double-tap zoom
 
   function init() {
     scene = new THREE.Scene();
@@ -265,24 +264,13 @@
       setFov(fov + e.deltaY * 0.05);
     }, { passive: false });
 
-    // ----- Touch: two-finger pinch zoom + double-tap zoom -----
+    // ----- Touch: two-finger pinch zoom -----
     el.addEventListener('touchstart', function (e) {
       if (e.touches.length === 2) {
         // begin pinch — suppress single-finger drag
         isDragging = false;
         pinchStartDist = touchDist(e.touches[0], e.touches[1]);
         pinchStartFov = fov;
-      } else if (e.touches.length === 1) {
-        // detect double-tap
-        const now = Date.now();
-        if (now - lastTapTime < 300) {
-          // double tap → zoom in, or reset if already zoomed
-          dismissHint();
-          if (fov > 45) setFov(40); else setFov(75);
-          lastTapTime = 0;
-        } else {
-          lastTapTime = now;
-        }
       }
     }, { passive: false });
 
