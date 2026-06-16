@@ -24,7 +24,7 @@
     { label: "East Mezzanine",  file: "MEZZANINE_EAST.jpg" },
     { label: "Baggage",       file: "BAGGAGE.jpg" },
     { label: "East Holding",    file: "HOLDING_EAST.jpg" },
-    { label: "Center Holding",    file: "HOLDING_CENTER.jpg" },
+    { label: "Center Holding",    file: "HOLDING_CENTER.jpg" }
   ];
 
   const LOGO = "1 - Parkhill - Red.png";
@@ -432,18 +432,14 @@
   }
   .pano-hint-inner .hand {
     color: #fff;
-    animation: waveHand 2s linear infinite;
+    transform-origin: 50% 90%;   /* pivot near the wrist */
+    animation: waveHand 2.4s ease-in-out infinite;
   }
   @keyframes waveHand {
-    0%   { transform: translate(14px, 0); }
-    12.5%{ transform: translate(9.9px, -9.9px); }
-    25%  { transform: translate(0, -14px); }
-    37.5%{ transform: translate(-9.9px, -9.9px); }
-    50%  { transform: translate(-14px, 0); }
-    62.5%{ transform: translate(-9.9px, 9.9px); }
-    75%  { transform: translate(0, 14px); }
-    87.5%{ transform: translate(9.9px, 9.9px); }
-    100% { transform: translate(14px, 0); }
+    0%   { transform: rotate(0deg); }
+    25%  { transform: rotate(-16deg); }
+    75%  { transform: rotate(16deg); }
+    100% { transform: rotate(0deg); }
   }
   @media (prefers-reduced-motion: reduce) {
     .pano-hint-inner .hand { animation: none; }
@@ -460,5 +456,4 @@
     .scene-btn { padding: 14px 15px; font-size: 15px; }
     #logo { width: 116px; }
   }
-
 </style>
