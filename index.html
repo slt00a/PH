@@ -18,13 +18,14 @@
 
 <script>
   const SCENES = [
-    { label: "Airlines",     file: "AIRLINES.jpg" },
-    { label: "Car Rentals",  file: "RENTALS.jpg" },
-    { label: "East Mezzanine",  file: "MEZZANINE_EAST.jpg" },
-    { label: "West Mezzanine",  file: "MEZZANINE_WEST.jpg" },
-    { label: "Baggage Claim",  file: "BAGGAGE.jpg" },
-    { label: "East Holding",    file: "HOLDING_EAST.jpg" },
-    { label: "Holding 2",    file: "HOLDING_CENTER.jpg" },
+    { label: "Airlines",     file: "AIRLINES_01.jpg" },
+    { label: "Bridge",       file: "BRIDGE_01.jpg" },
+    { label: "Car Rentals",  file: "CAR_RENTALS_01.jpg" },
+    { label: "Holding 1",    file: "HOLDING_01.jpg" },
+    { label: "Holding 2",    file: "HOLDING_02.jpg" },
+    { label: "Mezzanine 1",  file: "MEZZANINE_01.jpg" },
+    { label: "Mezzanine 2",  file: "MEZZANINE_02.jpg" },
+    { label: "Mezzanine 3",  file: "MEZZANINE_03.jpg" }
   ];
 
   const LOGO = "1 - Parkhill - Red.png";
@@ -432,14 +433,18 @@
   }
   .pano-hint-inner .hand {
     color: #fff;
-    animation: waveHand 2s ease-in-out infinite;
+    animation: waveHand 2s linear infinite;
   }
   @keyframes waveHand {
-    0%   { transform: translate(0, 0); }
-    25%  { transform: translate(7px, -5px); }
-    50%  { transform: translate(0, -9px); }
-    75%  { transform: translate(-7px, -5px); }
-    100% { transform: translate(0, 0); }
+    0%   { transform: translate(14px, 0); }
+    12.5%{ transform: translate(9.9px, -9.9px); }
+    25%  { transform: translate(0, -14px); }
+    37.5%{ transform: translate(-9.9px, -9.9px); }
+    50%  { transform: translate(-14px, 0); }
+    62.5%{ transform: translate(-9.9px, 9.9px); }
+    75%  { transform: translate(0, 14px); }
+    87.5%{ transform: translate(9.9px, 9.9px); }
+    100% { transform: translate(14px, 0); }
   }
   @media (prefers-reduced-motion: reduce) {
     .pano-hint-inner .hand { animation: none; }
