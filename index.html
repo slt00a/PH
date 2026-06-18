@@ -15,10 +15,10 @@
   ============================================================
 -->
 <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, viewport-fit=cover">
-<title>Parkhill 360°</title>
+<title>Parkhill 360° Viewer</title>
 <link rel="icon" type="image/webp" href="cropped-favicon-32x32.webp" sizes="32x32" />
 <link rel="icon" type="image/webp" href="cropped-favicon-192x192.webp" sizes="192x192" />
-<link rel="apple-touch-icon" href="cropped-favicon-180x180.png" />
+<link rel="apple-touch-icon" href="cropped-favicon-180x180.webp" />
 
 <script>
   const SCENES = [
@@ -435,11 +435,13 @@
   }
   .pano-hint-inner .hand {
     color: #fff;
-    animation: waveHand 2.2s ease-in-out infinite;
+    transform-origin: 50% 80%;   /* pivot near the wrist for a natural tilt */
+    animation: waveHand 2.6s ease-in-out infinite;
   }
   @keyframes waveHand {
-    0%, 100% { transform: translateX(-14px); }
-    50%      { transform: translateX(14px); }
+    0%   { transform: translate(-14px, 2px) rotate(-12deg); }
+    50%  { transform: translate(14px, 2px) rotate(12deg); }
+    100% { transform: translate(-14px, 2px) rotate(-12deg); }
   }
   @media (prefers-reduced-motion: reduce) {
     .pano-hint-inner .hand { animation: none; }
